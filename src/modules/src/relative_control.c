@@ -263,16 +263,13 @@ void relativeControlTask(void* arg)
         static float relaXof2in1=3.0f, relaYof2in1=0.0f;
 
         if (selfID==1){
-          relaXof2in1=1.5f; 
+          relaXof2in1=1.0f; 
           relaYof2in1=2.0f;
         }else if (selfID==2){
-          relaXof2in1=2.5f;
-          relaYof2in1=1.0f;
+          relaXof2in1=2.0f;
+          relaYof2in1=0.0f;
         }else if (selfID==3){
-          relaXof2in1=2.5f; 
-          relaYof2in1=-1.0f;
-        }else if (selfID==4){
-          relaXof2in1=1.5f;
+          relaXof2in1=1.0f; 
           relaYof2in1=-2.0f;
         }
 
