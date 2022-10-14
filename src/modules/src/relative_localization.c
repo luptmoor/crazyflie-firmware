@@ -63,7 +63,8 @@ static float vxj, vyj, vzj, rj; // receive vx, vy, vz, gz
 static float vxi, vyi, vzi, ri; // self vx, vy, vz, gz
 static uint16_t dij; // distance between self i and other j
 static float hi, hj; // height of robot i and j
-static float hij, dist;
+static float hij;
+static float dist[NumUWB];
 
 static inline void mat_trans(const arm_matrix_instance_f32 * pSrc, arm_matrix_instance_f32 * pDst)
 { configASSERT(ARM_MATH_SUCCESS == arm_mat_trans_f32(pSrc, pDst)); }
@@ -197,8 +198,9 @@ void relativeEKF(int n, float vxi, float vyi, float vzi, float ri, float hi, flo
   zij = relaVar[n].S[STATE_rlZ];
   float distPred = arm_sqrt(xij*xij+yij*yij+zij*zij)+0.0001f;
   float distMeas = (float)(dij/1000.0f);
-  distMeas = distMeas - (0.048f*distMeas + 0.65f); // UWB biad model
-  if(n==1){dist = distMeas;}
+  distMeas = distMeas - (0.048f*distMeas + 0.65f); // UWB bias model
+  // if(n==1){dist = distMeas;}
+  dist[n] = distMeas;
   h[0] = xij/distPred;
   h[1] = yij/distPred;
   h[2] = zij/distPred;
@@ -238,50 +240,59 @@ bool relativeInfoRead(float* relaVarParam, float* inputVarParam){
     return false;    
 }
 
-LOG_GROUP_START(relativePosition)
+// LOG_GROUP_START(relativePosition)
+// LOG_ADD(LOG_FLOAT, rlX0, &relaVar[0].S[STATE_rlX])
+// LOG_ADD(LOG_FLOAT, rlY0, &relaVar[0].S[STATE_rlY])
+// LOG_ADD(LOG_FLOAT, rlZ0, &relaVar[0].S[STATE_rlZ])
+// LOG_ADD(LOG_FLOAT, rlYaw0, &relaVar[0].S[STATE_rlYaw])
+// LOG_ADD(LOG_FLOAT, PX0, &relaVar[0].P[STATE_rlX][STATE_rlX])
+// LOG_ADD(LOG_FLOAT, PY0, &relaVar[0].P[STATE_rlY][STATE_rlY])
+// LOG_ADD(LOG_FLOAT, PZ0, &relaVar[0].P[STATE_rlZ][STATE_rlZ])
+// LOG_ADD(LOG_FLOAT, PYaw0, &relaVar[0].P[STATE_rlYaw][STATE_rlYaw])
+// LOG_ADD(LOG_FLOAT, rlX1, &relaVar[1].S[STATE_rlX])
+// LOG_ADD(LOG_FLOAT, rlY1, &relaVar[1].S[STATE_rlY])
+// LOG_ADD(LOG_FLOAT, rlZ1, &relaVar[1].S[STATE_rlZ])
+// LOG_ADD(LOG_FLOAT, rlYaw1, &relaVar[1].S[STATE_rlYaw])
+// LOG_ADD(LOG_FLOAT, PX1, &relaVar[1].P[STATE_rlX][STATE_rlX])
+// LOG_ADD(LOG_FLOAT, PY1, &relaVar[1].P[STATE_rlY][STATE_rlY])
+// LOG_ADD(LOG_FLOAT, PZ1, &relaVar[1].P[STATE_rlZ][STATE_rlZ])
+// LOG_ADD(LOG_FLOAT, PYaw1, &relaVar[1].P[STATE_rlYaw][STATE_rlYaw])
+// LOG_ADD(LOG_FLOAT, dist1, &dist)
+// LOG_GROUP_STOP(relativePosition)
+
+// LOG_GROUP_START(swarmInput)
+// LOG_ADD(LOG_FLOAT, vx0, &vxi)
+// LOG_ADD(LOG_FLOAT, vy0, &vyi)
+// LOG_ADD(LOG_FLOAT, vz0, &vzi)
+// LOG_ADD(LOG_FLOAT, r0, &ri)
+// LOG_ADD(LOG_FLOAT, vx1, &inputVar[1][STATE_rlX])
+// LOG_ADD(LOG_FLOAT, vy1, &inputVar[1][STATE_rlY])
+// LOG_ADD(LOG_FLOAT, vz1, &inputVar[1][STATE_rlZ])
+// LOG_ADD(LOG_FLOAT, r1, &inputVar[1][STATE_rlYaw])
+// LOG_GROUP_STOP(swarmInput)
+
+LOG_GROUP_START(relative_pos)
 LOG_ADD(LOG_FLOAT, rlX0, &relaVar[0].S[STATE_rlX])
 LOG_ADD(LOG_FLOAT, rlY0, &relaVar[0].S[STATE_rlY])
 LOG_ADD(LOG_FLOAT, rlZ0, &relaVar[0].S[STATE_rlZ])
 LOG_ADD(LOG_FLOAT, rlYaw0, &relaVar[0].S[STATE_rlYaw])
-LOG_ADD(LOG_FLOAT, PX0, &relaVar[0].P[STATE_rlX][STATE_rlX])
-LOG_ADD(LOG_FLOAT, PY0, &relaVar[0].P[STATE_rlY][STATE_rlY])
-LOG_ADD(LOG_FLOAT, PZ0, &relaVar[0].P[STATE_rlZ][STATE_rlZ])
-LOG_ADD(LOG_FLOAT, PYaw0, &relaVar[0].P[STATE_rlYaw][STATE_rlYaw])
+LOG_ADD(LOG_FLOAT, dist0, &dist[0])
 LOG_ADD(LOG_FLOAT, rlX1, &relaVar[1].S[STATE_rlX])
 LOG_ADD(LOG_FLOAT, rlY1, &relaVar[1].S[STATE_rlY])
-LOG_ADD(LOG_FLOAT, rlZ1, &relaVar[1].S[STATE_rlZ])
 LOG_ADD(LOG_FLOAT, rlYaw1, &relaVar[1].S[STATE_rlYaw])
-LOG_ADD(LOG_FLOAT, PX1, &relaVar[1].P[STATE_rlX][STATE_rlX])
-LOG_ADD(LOG_FLOAT, PY1, &relaVar[1].P[STATE_rlY][STATE_rlY])
-LOG_ADD(LOG_FLOAT, PZ1, &relaVar[1].P[STATE_rlZ][STATE_rlZ])
-LOG_ADD(LOG_FLOAT, PYaw1, &relaVar[1].P[STATE_rlYaw][STATE_rlYaw])
-LOG_ADD(LOG_FLOAT, dist1, &dist)
-LOG_GROUP_STOP(relativePosition)
-
-LOG_GROUP_START(swarmInput)
-LOG_ADD(LOG_FLOAT, vx0, &vxi)
-LOG_ADD(LOG_FLOAT, vy0, &vyi)
-LOG_ADD(LOG_FLOAT, vz0, &vzi)
-LOG_ADD(LOG_FLOAT, r0, &ri)
-LOG_ADD(LOG_FLOAT, vx1, &inputVar[1][STATE_rlX])
-LOG_ADD(LOG_FLOAT, vy1, &inputVar[1][STATE_rlY])
-LOG_ADD(LOG_FLOAT, vz1, &inputVar[1][STATE_rlZ])
-LOG_ADD(LOG_FLOAT, r1, &inputVar[1][STATE_rlYaw])
-LOG_GROUP_STOP(swarmInput)
-
-// LOG_GROUP_START(relative_pos)
-// LOG_ADD(LOG_FLOAT, rlX0, &relaVar[0].S[STATE_rlX])
-// LOG_ADD(LOG_FLOAT, rlY0, &relaVar[0].S[STATE_rlY])
-// LOG_ADD(LOG_FLOAT, rlYaw0, &relaVar[0].S[STATE_rlYaw])
-// LOG_ADD(LOG_FLOAT, rlX1, &relaVar[1].S[STATE_rlX])
-// LOG_ADD(LOG_FLOAT, rlY1, &relaVar[1].S[STATE_rlY])
-// LOG_ADD(LOG_FLOAT, rlYaw1, &relaVar[1].S[STATE_rlYaw])
-// LOG_ADD(LOG_FLOAT, rlZ1, &hij)
-// LOG_ADD(LOG_FLOAT, dist1, &dist)
-// LOG_ADD(LOG_FLOAT, rlX2, &relaVar[2].S[STATE_rlX])
-// LOG_ADD(LOG_FLOAT, rlY2, &relaVar[2].S[STATE_rlY])
-// LOG_ADD(LOG_FLOAT, rlYaw2, &relaVar[2].S[STATE_rlYaw])
-// LOG_GROUP_STOP(relative_pos)
+LOG_ADD(LOG_FLOAT, rlZ1, &relaVar[1].S[STATE_rlZ])
+LOG_ADD(LOG_FLOAT, dist1, &dist[1])
+LOG_ADD(LOG_FLOAT, rlX2, &relaVar[2].S[STATE_rlX])
+LOG_ADD(LOG_FLOAT, rlY2, &relaVar[2].S[STATE_rlY])
+LOG_ADD(LOG_FLOAT, rlZ2, &relaVar[2].S[STATE_rlZ])
+LOG_ADD(LOG_FLOAT, rlYaw2, &relaVar[2].S[STATE_rlYaw])
+LOG_ADD(LOG_FLOAT, dist2, &dist[2])
+LOG_ADD(LOG_FLOAT, rlX3, &relaVar[3].S[STATE_rlX])
+LOG_ADD(LOG_FLOAT, rlY3, &relaVar[3].S[STATE_rlY])
+LOG_ADD(LOG_FLOAT, rlZ3, &relaVar[3].S[STATE_rlZ])
+LOG_ADD(LOG_FLOAT, rlYaw3, &relaVar[3].S[STATE_rlYaw])
+LOG_ADD(LOG_FLOAT, dist3, &dist[3])
+LOG_GROUP_STOP(relative_pos)
 
 PARAM_GROUP_START(arelative_pos)
 PARAM_ADD(PARAM_FLOAT, noiFlowX, &procNoise_velX) // make sure the name is not too long
