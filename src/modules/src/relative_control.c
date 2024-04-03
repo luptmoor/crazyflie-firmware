@@ -207,6 +207,7 @@ void relativeControlTask(void* arg) {
         // Initialise RNG differently for each drone
         srand(selfID * takeoff_tick);
         layer_number = selfID;
+        height = initial_hover_height + layer_number * kf_init_layer_distance;
       }
 
 
