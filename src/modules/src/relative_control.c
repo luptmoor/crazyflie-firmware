@@ -23,6 +23,16 @@ static float relaVarInCtrl[NumUWB][STATE_DIM_rl];
 static float inputVarInCtrl[NumUWB][STATE_DIM_rl];
 static uint8_t selfID;
 static float height;
+static float initial_hover_height;
+
+static float kf_init_layer_distance = 0.35f; // [m]
+static uint8_t layer_number;
+
+
+static float form_dx = 0.0f; // [m]
+static float form_dy = 0.5f; // [m]
+static float form_dz = 0.0f; // [m]
+
 
 static float relaCtrl_p = 2.0f;
 static float relaCtrl_i = 0.0001f;
@@ -30,8 +40,8 @@ static float relaCtrl_d = 0.01f;
 // static float NDI_k = 2.0f;
 static char c = 0; // monoCam
 
-static void setHoverSetpoint(setpoint_t *setpoint, float vx, float vy, float z, float yawrate)
-{
+
+static void setHoverSetpoint(setpoint_t *setpoint, float vx, float vy, float z, float yawrate) {
   setpoint->mode.z = modeAbs;
   setpoint->position.z = z;
   setpoint->mode.yaw = modeVelocity;
@@ -73,38 +83,7 @@ static void flyRandomIn1meter(float vel){
   }
 }
 
-#if USE_MONOCAM
-static float PreErr_yaw = 0;
-static float IntErr_yaw = 0;
-static uint32_t PreTimeYaw;
-static void flyViaDoor(char camYaw){
-  if(camYaw){
-    float dt = (float)(xTaskGetTickCount()-PreTimeYaw)/configTICK_RATE_HZ;
-    PreTimeYaw = xTaskGetTickCount();
-    if(dt > 1) // skip the first run of the EKF
-      return;
-    // pid control for door flight
-    float err_yaw;
-    if(camYaw>128)
-      err_yaw = -(camYaw - 128 - 64); // 0-128, nominal value = 64
-    else
-      err_yaw = -(camYaw - 64); // 0-128, nominal value = 64
-    float pid_vyaw = 1.0f * err_yaw;
-    float dyaw = (err_yaw - PreErr_yaw) / dt;
-    PreErr_yaw = err_yaw;
-    pid_vyaw += 0.01f * dyaw;
-    IntErr_yaw += err_yaw * dt;
-    pid_vyaw += 0.0001f * constrain(IntErr_yaw, -10.0f, 10.0f);
-    pid_vyaw = constrain(pid_vyaw, -100, 100);  
-    if(camYaw<128)
-      setHoverSetpoint(&setpoint, 1, 0, 0.5f, pid_vyaw); // deg/s
-    else
-      setHoverSetpoint(&setpoint, 0, -0.3f, 0.5f, pid_vyaw); // deg/s
-  }else{
-    setHoverSetpoint(&setpoint, 1.5f, 0, 0.5f, 45);
-  }
-}
-#endif
+
 
 #define SIGN(a) ((a>=0)?1:-1)
 static float targetX;
@@ -117,7 +96,9 @@ static float IntErr_x = 0;
 static float IntErr_y = 0;
 static float IntErr_z = 0;
 static uint32_t PreTime;
-static void formation0asCenter(float tarX, float tarY, float tarZ){
+
+
+static void formation0asCenter(float tarX, float tarY, float tarZ) {
   float dt = (float)(xTaskGetTickCount()-PreTime)/configTICK_RATE_HZ;
   PreTime = xTaskGetTickCount();
   if(dt > 1) // skip the first run of the EKF
@@ -129,6 +110,8 @@ static void formation0asCenter(float tarX, float tarY, float tarZ){
   float pid_vx = relaCtrl_p * err_x;
   float pid_vy = relaCtrl_p * err_y;
   float pid_vz = relaCtrl_p * err_z;
+
+  // Derivative gain
   float dx = (err_x - PreErr_x) / dt;
   float dy = (err_y - PreErr_y) / dt;
   float dz = (err_z - PreErr_z) / dt;
@@ -138,6 +121,8 @@ static void formation0asCenter(float tarX, float tarY, float tarZ){
   pid_vx += relaCtrl_d * dx;
   pid_vy += relaCtrl_d * dy;
   pid_vz += relaCtrl_d * dz;
+
+  // Integral gain
   IntErr_x += err_x * dt;
   IntErr_y += err_y * dt;
   IntErr_z += err_z * dt;
@@ -180,32 +165,38 @@ static void formation0asCenter(float tarX, float tarY, float tarZ){
 //   setHoverSetpoint(&setpoint, ndi_vx, ndi_vy, height, 0);
 // }
 
-void relativeControlTask(void* arg)
-{
+void relativeControlTask(void* arg) {
   static uint32_t ctrlTick;
   systemWaitStart();
   static logVarId_t logIdStateIsFlying;
   logIdStateIsFlying = logGetVarId("kalman", "inFlight");
   // height = (float)selfID*0.1f+0.2f;
+
+
+  // Task Loop
   while(1) {
+
+    //Check if we should fly
     vTaskDelay(10);
     if(selfID==0){
       keepFlying = logGetUint(logIdStateIsFlying);
       keepFlying = command_share(selfID, keepFlying);
-      continue;
+      continue; // Do not send commands to leader drone, as it is manually controlled
     }
-#if USE_MONOCAM
-    if(selfID==0)
-      uart2Getchar(&c);
-#endif
+
     keepFlying = command_share(selfID, keepFlying);
-    if(relativeInfoRead((float *)relaVarInCtrl, (float *)inputVarInCtrl) && keepFlying){
-      // take off
-      if(onGround){
+
+
+    // If we should fly
+    if(relativeInfoRead((float *)relaVarInCtrl, (float *)inputVarInCtrl) && keepFlying) {
+
+
+      // TAKE OFF if on ground
+      if(onGround) {
         estimatorKalmanInit(); // reseting kalman filter
         vTaskDelay(M2T(2000));
         for (int i=0; i<50; i++) {
-          setHoverSetpoint(&setpoint, 0, 0, 0.3f, 0);
+          setHoverSetpoint(&setpoint, 0, 0, initial_hover_height, 0);
           vTaskDelay(M2T(100));
         }
         onGround = false;
@@ -214,84 +205,109 @@ void relativeControlTask(void* arg)
 
       // control loop
       // setHoverSetpoint(&setpoint, 0, 0, height, 0); // hover
-    //   if (selfID==0){
-    //       flyRandomIn1meter(1.0f);
-    //       continue;
-    //   }
+      //   if (selfID==0){
+      //       flyRandomIn1meter(1.0f);
+      //       continue;
+      //   }
+
+
+      // Reset Timer after take off
       uint32_t tickInterval = xTaskGetTickCount() - ctrlTick;
-      if( tickInterval < 20000){
-          flyRandomIn1meter(1.0f); // random flight within first 10 seconds
+
+
+
+      // CONVERGENCE FLIGHT for 20s
+      if(tickInterval < 20000) {
+        flyRandomIn1meter(1.0f);
         targetX = relaVarInCtrl[0][STATE_rlX];
         targetY = relaVarInCtrl[0][STATE_rlY];
         targetZ = relaVarInCtrl[0][STATE_rlZ];
 
-        if ((tickInterval > 2000) && (tickInterval < 4000))
-            height = 0.3;
-        if ((tickInterval > 4000) && (tickInterval < 6000))
-            height = 0.5;
-        if ((tickInterval > 6000) && (tickInterval < 8000))
-            height = 0.7;
-        if ((tickInterval > 8000) && (tickInterval < 10000))
-            height = 0.4;
-        if ((tickInterval > 10000) && (tickInterval < 12000))
-            height = 0.8;
-        if ((tickInterval > 12000) && (tickInterval < 14000))
-            height = 0.3;
-        if ((tickInterval > 14000) && (tickInterval < 16000))
-            height = 0.7;
-        if ((tickInterval > 16000) && (tickInterval < 18000))
-            height = 0.9;
-        if ((tickInterval > 18000) && (tickInterval < 20000))
-            height = 0.5;
-      }
-      else
-      {
+        layer_number = selfID;
+        // ID0 leader manually controlled
+        // ID1 starts on layer 1 = 1.35m.
+        // ID2 starts on layer 2 = 1.70m;
+        // ID3 starts on layer 3 = 2.05m;
+        // ID4 starts on layer 4 = 2.40m;
 
-#if USE_MONOCAM
-        if(selfID==0)
-          flyViaDoor(c);
-        else
-          formation0asCenter(targetX, targetY);
-#else
-        if ( (tickInterval > 20000) && (tickInterval < 30000) ){ // formation
+        if ((tickInterval > 2000) && (tickInterval < 4000)) {
+            layer_number++;
+            layer_number = layer_number % 5;
+            height = initial_hover_height + layer_number * kf_init_layer_distance;
+        }
+
+        if ((tickInterval > 4000) && (tickInterval < 6000)) {
+            layer_number++;
+            layer_number = layer_number % 5;
+            height = initial_hover_height + layer_number * kf_init_layer_distance;
+        }
+
+        if ((tickInterval > 6000) && (tickInterval < 8000)) {
+            layer_number++;
+            layer_number = layer_number % 5;
+            height = initial_hover_height + layer_number * kf_init_layer_distance;
+        }
+
+        if ((tickInterval > 8000) && (tickInterval < 10000)) {
+            layer_number++;
+            layer_number = layer_number % 5;
+            height = initial_hover_height + layer_number * kf_init_layer_distance;
+        }
+
+        if ((tickInterval > 10000) && (tickInterval < 12000)) {
+            layer_number++;
+            layer_number = layer_number % 5;
+            height = initial_hover_height + layer_number * kf_init_layer_distance;
+        }
+
+        if ((tickInterval > 12000) && (tickInterval < 14000)) {
+            layer_number++;
+            layer_number = layer_number % 5;
+            height = initial_hover_height + layer_number * kf_init_layer_distance;
+        }
+
+        if ((tickInterval > 14000) && (tickInterval < 16000)) {
+            layer_number++;
+            layer_number = layer_number % 5;
+            height = initial_hover_height + layer_number * kf_init_layer_distance;
+        }
+
+        if ((tickInterval > 16000) && (tickInterval < 18000)) {
+            layer_number++;
+            layer_number = layer_number % 5;
+            height = initial_hover_height + layer_number * kf_init_layer_distance;
+        }
+
+        if ((tickInterval > 18000) && (tickInterval < 20000)) {
+            layer_number++;
+            layer_number = layer_number % 5;
+            height = initial_hover_height + layer_number * kf_init_layer_distance;
+        }
+
+      } else {
+
+        // FORMATION for 10s ???
+        if ( (tickInterval > 20000) && (tickInterval < 30000) ){ 
           srand((unsigned int) relaVarInCtrl[0][STATE_rlX]*100);
           formation0asCenter(targetX, targetY, targetZ);
           // NDI_formation0asCenter(targetX, targetY);
           // lastTick = tickInterval;
         }
 
-        static float relaXof2in1=3.0f, relaYof2in1=0.0f;
+        // FORMATION until crash / landing
+        if (tickInterval > 30000) {
 
-        if (selfID==1){
-          relaXof2in1=1.0f; 
-          relaYof2in1=2.0f;
-        }else if (selfID==2){
-          relaXof2in1=2.0f;
-          relaYof2in1=0.0f;
-        }else if (selfID==3){
-          relaXof2in1=1.0f; 
-          relaYof2in1=-2.0f;
+          formation0asCenter(form_dx, form_dy, form_dz); 
+
+          //-cosf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 + sinf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
+          //-sinf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 - cosf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
+          
         }
-
-        if ( (tickInterval > 30000) ){
-          // if(tickInterval - lastTick > 3000)
-          // {
-          //   lastTick = tickInterval;
-          //   relaXof2in1 = (rand() / (float)RAND_MAX) * 0.8f + 0.2f; // in front
-          //   relaYof2in1 = ((rand() / (float)RAND_MAX) -0.5f)* 0.7f * relaXof2in1; // horizon offset based on depth
-          //   height = (rand() / (float)RAND_MAX) * 0.8f + 0.2f;
-          // }
-
-          targetX = relaXof2in1; //-cosf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 + sinf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
-          targetY = relaYof2in1; //-sinf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 - cosf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
-          targetZ = 0.2f;
-          formation0asCenter(targetX, targetY, targetZ); 
-        }
-#endif
       }
 
-    }else{
-      // landing procedure
+
+    // If we should not fly: LANDING procedure
+    } else {
       if(!onGround){
         for (int i=1; i<5; i++) {
           if(selfID!=0){
@@ -302,6 +318,8 @@ void relativeControlTask(void* arg)
         onGround = true;
       } 
     }
+
+
   }
 }
 
@@ -310,20 +328,33 @@ void relativeControlInit(void)
   if (isInit)
     return;
   selfID = (uint8_t)(((configblockGetRadioAddress()) & 0x000000000f) - 5);
-#if USE_MONOCAM
-  if(selfID==0)
-    uart2Init(115200); // only CF0 has monoCam and usart comm
-#endif
+
   xTaskCreate(relativeControlTask,"relative_Control",configMINIMAL_STACK_SIZE, NULL,3,NULL );
-  height = 0.5f;
+  height = 1.0f;
+  initial_hover_height = 1.0f;
+
+  form_dx = selfID * 0.4f;
+  form_dy = selfID * 0.4f;
+  form_dz = 0.0f;
+
+  // convergence_procedure_velocity = 0.8f;
   isInit = true;
 }
+
+
+
+// Logging and Parameters
+
 
 PARAM_GROUP_START(relative_ctrl)
 PARAM_ADD(PARAM_UINT8, keepFlying, &keepFlying)
 PARAM_ADD(PARAM_FLOAT, relaCtrl_p, &relaCtrl_p)
 PARAM_ADD(PARAM_FLOAT, relaCtrl_i, &relaCtrl_i)
 PARAM_ADD(PARAM_FLOAT, relaCtrl_d, &relaCtrl_d)
+PARAM_ADD(PARAM_FLOAT, form_dx, &form_dx)
+PARAM_ADD(PARAM_FLOAT, form_dy, &form_dy)
+PARAM_ADD(PARAM_FLOAT, form_dz, &form_dz)
+
 PARAM_GROUP_STOP(relative_ctrl)
 
 LOG_GROUP_START(mono_cam)
