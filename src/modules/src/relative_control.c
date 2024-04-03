@@ -25,7 +25,7 @@ static uint8_t selfID;
 static float height;
 static float initial_hover_height;
 
-static float kf_init_layer_distance = 0.35f; // [m]
+static float kf_init_layer_distance = 0.30f; // [m]
 static uint8_t layer_number;
 
 
@@ -67,6 +67,7 @@ static void set3DVel(setpoint_t *setpoint, float vx, float vy, float vz, float y
   setpoint->velocity_body = true;
   commanderSetSetpoint(setpoint, 3);
 }
+
 
 static void flyRandomIn1meter(float vel){
   float randomYaw = (rand() / (float)RAND_MAX) * 6.28f; // 0-2pi rad
@@ -166,14 +167,13 @@ static void formation0asCenter(float tarX, float tarY, float tarZ) {
 // }
 
 void relativeControlTask(void* arg) {
-  static uint32_t ctrlTick;
+  static uint32_t takeoff_tick, height_change_tick;
   systemWaitStart();
   static logVarId_t logIdStateIsFlying;
   logIdStateIsFlying = logGetVarId("kalman", "inFlight");
-  // height = (float)selfID*0.1f+0.2f;
 
 
-  // Task Loop
+  // Main Loop
   while(1) {
 
     //Check if we should fly
@@ -200,110 +200,61 @@ void relativeControlTask(void* arg) {
           vTaskDelay(M2T(100));
         }
         onGround = false;
-        ctrlTick = xTaskGetTickCount();
+
+        // Define time datum
+        takeoff_tick = xTaskGetTickCount();
+        height_change_tick = takeoff_tick;
+        // Initialise RNG differently for each drone
+        srand(selfID * takeoff_tick);
+        layer_number = selfID;
       }
 
-      // control loop
-      // setHoverSetpoint(&setpoint, 0, 0, height, 0); // hover
-      //   if (selfID==0){
-      //       flyRandomIn1meter(1.0f);
-      //       continue;
-      //   }
 
+      // Start two timers after takeoff: one for absolute time, and one for height changes
+      uint32_t ticks_since_takeoff = xTaskGetTickCount() - takeoff_tick;
+      uint32_t ticks_since_height_change = xTaskGetTickCount() - height_change_tick;
 
-      // Reset Timer after take off
-      uint32_t tickInterval = xTaskGetTickCount() - ctrlTick;
+      // CONVERGENCE FLIGHT for 26s
+      if(ticks_since_takeoff < 27000) {
+        
+        // ID1 starts on layer 1 = 1.10m.
+        // ID2 starts on layer 2 = 1.40m;
+        // ID3 starts on layer 3 = 1.70m;
+        // ID4 starts on layer 4 = 2.00m;
 
+        // Change hovering layer every 3s
+        if (ticks_since_height_change > 3000) {
+          layer_number++;
+          layer_number = layer_number % 5;
+          height = initial_hover_height + layer_number * kf_init_layer_distance;
+          // Reset timer after height change
+          height_change_tick = xTaskGetTickCount(); 
+        }
 
+        flyRandomIn1meter(0.8f);
 
-      // CONVERGENCE FLIGHT for 20s
-      if(tickInterval < 20000) {
-        flyRandomIn1meter(1.0f);
         targetX = relaVarInCtrl[0][STATE_rlX];
         targetY = relaVarInCtrl[0][STATE_rlY];
         targetZ = relaVarInCtrl[0][STATE_rlZ];
 
-        layer_number = selfID;
-        // ID0 leader manually controlled
-        // ID1 starts on layer 1 = 1.35m.
-        // ID2 starts on layer 2 = 1.70m;
-        // ID3 starts on layer 3 = 2.05m;
-        // ID4 starts on layer 4 = 2.40m;
-
-        if ((tickInterval > 2000) && (tickInterval < 4000)) {
-            layer_number++;
-            layer_number = layer_number % 5;
-            height = initial_hover_height + layer_number * kf_init_layer_distance;
-        }
-
-        if ((tickInterval > 4000) && (tickInterval < 6000)) {
-            layer_number++;
-            layer_number = layer_number % 5;
-            height = initial_hover_height + layer_number * kf_init_layer_distance;
-        }
-
-        if ((tickInterval > 6000) && (tickInterval < 8000)) {
-            layer_number++;
-            layer_number = layer_number % 5;
-            height = initial_hover_height + layer_number * kf_init_layer_distance;
-        }
-
-        if ((tickInterval > 8000) && (tickInterval < 10000)) {
-            layer_number++;
-            layer_number = layer_number % 5;
-            height = initial_hover_height + layer_number * kf_init_layer_distance;
-        }
-
-        if ((tickInterval > 10000) && (tickInterval < 12000)) {
-            layer_number++;
-            layer_number = layer_number % 5;
-            height = initial_hover_height + layer_number * kf_init_layer_distance;
-        }
-
-        if ((tickInterval > 12000) && (tickInterval < 14000)) {
-            layer_number++;
-            layer_number = layer_number % 5;
-            height = initial_hover_height + layer_number * kf_init_layer_distance;
-        }
-
-        if ((tickInterval > 14000) && (tickInterval < 16000)) {
-            layer_number++;
-            layer_number = layer_number % 5;
-            height = initial_hover_height + layer_number * kf_init_layer_distance;
-        }
-
-        if ((tickInterval > 16000) && (tickInterval < 18000)) {
-            layer_number++;
-            layer_number = layer_number % 5;
-            height = initial_hover_height + layer_number * kf_init_layer_distance;
-        }
-
-        if ((tickInterval > 18000) && (tickInterval < 20000)) {
-            layer_number++;
-            layer_number = layer_number % 5;
-            height = initial_hover_height + layer_number * kf_init_layer_distance;
-        }
 
       } else {
-
-        // FORMATION for 10s ???
-        if ( (tickInterval > 20000) && (tickInterval < 30000) ){ 
+        // CONVERGENCE PROCEDURE FINISHED
+        // Hold relative positions for 8s.
+        if ( (ticks_since_takeoff > 27000) && (ticks_since_takeoff < 35000) ){ 
           srand((unsigned int) relaVarInCtrl[0][STATE_rlX]*100);
           formation0asCenter(targetX, targetY, targetZ);
           // NDI_formation0asCenter(targetX, targetY);
-          // lastTick = tickInterval;
         }
 
         // FORMATION until crash / landing
-        if (tickInterval > 30000) {
-
+        if (ticks_since_takeoff > 35000) {
           formation0asCenter(form_dx, form_dy, form_dz); 
-
           //-cosf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 + sinf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
           //-sinf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 - cosf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
-          
         }
       }
+
 
 
     // If we should not fly: LANDING procedure
@@ -331,7 +282,7 @@ void relativeControlInit(void)
 
   xTaskCreate(relativeControlTask,"relative_Control",configMINIMAL_STACK_SIZE, NULL,3,NULL );
   height = 1.0f;
-  initial_hover_height = 1.0f;
+  initial_hover_height = 0.8f;
 
   form_dx = selfID * 0.4f;
   form_dy = selfID * 0.4f;
