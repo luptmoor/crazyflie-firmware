@@ -27,6 +27,7 @@ static float initial_hover_height;
 
 static float kf_init_layer_distance = 0.30f; // [m]
 static uint8_t layer_number;
+static uint8_t layer_map[5] = {2, 4, 3, 1, 0};
 
 
 static float form_dx = 0.0f; // [m]
@@ -227,12 +228,12 @@ void relativeControlTask(void* arg) {
         if (ticks_since_height_change > 3000) {
           layer_number++;
           layer_number = layer_number % 5;
-          height = initial_hover_height + layer_number * kf_init_layer_distance;
+          height = initial_hover_height + layer_map[layer_number] * kf_init_layer_distance;
           // Reset timer after height change
           height_change_tick = xTaskGetTickCount(); 
         }
 
-        flyRandomIn1meter(0.8f);
+        flyRandomIn1meter(0.7f);
 
         targetX = relaVarInCtrl[0][STATE_rlX];
         targetY = relaVarInCtrl[0][STATE_rlY];

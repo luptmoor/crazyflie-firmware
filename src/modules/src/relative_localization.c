@@ -35,7 +35,8 @@ static float measNoise_uwb = 0.15f;  //0.06;  // ranging deviation
 static float InitCovPos = 1000.0f;
 static float InitCovYaw = 1.0f;
 
-static float led_thresh = 0.005f;
+static float led_thresh = 0.3f;
+static float pdop = 1.0f;  // Position dilution of precision / standard decviation of distance estimate
 
 static relaVariable_t relaVar[NumUWB]; // Array of "structs" that contain P, ...
 static float inputVar[NumUWB][STATE_DIM_rl];
@@ -158,7 +159,8 @@ void relativeLocoTask(void* arg)
 
 
     // Light up all LEDs if position of leader drone [0] is very certain
-    if (relaVar[0].P[STATE_rlX][STATE_rlX] < led_thresh && relaVar[0].P[STATE_rlY][STATE_rlY] < led_thresh && relaVar[0].P[STATE_rlZ][STATE_rlZ] < led_thresh) {
+    pdop = arm_sqrt(relaVar[0].P[STATE_rlX][STATE_rlX] + relaVar[0].P[STATE_rlY][STATE_rlY] + relaVar[0].P[STATE_rlZ][STATE_rlZ]);
+    if (pdop < led_thresh) {
       ledSetAll();
     } else {
       ledClearAll();
