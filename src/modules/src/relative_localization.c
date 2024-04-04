@@ -35,6 +35,8 @@ static float measNoise_uwb = 0.15f;  //0.06;  // ranging deviation
 static float InitCovPos = 1000.0f;
 static float InitCovYaw = 1.0f;
 
+static float led_thresh = 0.005f;
+
 static relaVariable_t relaVar[NumUWB]; // Array of "structs" that contain P, ...
 static float inputVar[NumUWB][STATE_DIM_rl];
 
@@ -112,13 +114,14 @@ void relativeLocoTask(void* arg)
     relaVar[n].receiveFlag = false;
   }
 
+
   // Main loop
   while(1) {
-
+    
     vTaskDelay(10);
     for (int n=0; n<NumUWB; n++) {
 
-      // If data received from peer drone
+      // If data received from peer drone n
       if (twrGetSwarmInfo(n, &dij, &vxj, &vyj, &vzj, &rj, &hj)){
         // Reset failed connections counter
         failedConnections = 0;
@@ -133,6 +136,8 @@ void relativeLocoTask(void* arg)
           //Estimate state
           relativeEKF(n, vxi, vyi, vzi, ri, hi, vxj, vyj, vzj, rj, hj, dij, dtEKF);
           if(n==1){hij = hj-hi;}
+
+          
 
           // Update Kalman model inputs
           inputVar[n][STATE_rlX] = vxj;
@@ -150,6 +155,16 @@ void relativeLocoTask(void* arg)
     if(failedConnections>100){
       fullConnect = false; // disable control if there is no ranging after 1 second
     }
+
+
+    // Light up all LEDs if position of leader drone [0] is very certain
+    if (relaVar[0].P[STATE_rlX][STATE_rlX] < led_thresh && relaVar[0].P[STATE_rlY][STATE_rlY] < led_thresh && relaVar[0].P[STATE_rlZ][STATE_rlZ] < led_thresh) {
+      ledSetAll();
+    } else {
+      ledClearAll();
+    
+    }
+
   }
 }
 
@@ -335,9 +350,13 @@ LOG_ADD(LOG_FLOAT, rlY3, &relaVar[3].S[STATE_rlY])
 LOG_ADD(LOG_FLOAT, rlZ3, &relaVar[3].S[STATE_rlZ])
 LOG_ADD(LOG_FLOAT, rlYaw3, &relaVar[3].S[STATE_rlYaw])
 LOG_ADD(LOG_FLOAT, dist3, &dist[3])
+LOG_ADD(LOG_FLOAT, uncert0x, &relaVar[0].P[STATE_rlX][STATE_rlX])
+LOG_ADD(LOG_FLOAT, uncert0y, &relaVar[0].P[STATE_rlY][STATE_rlY])
+LOG_ADD(LOG_FLOAT, uncert0z, &relaVar[0].P[STATE_rlZ][STATE_rlZ])
+
 LOG_GROUP_STOP(relative_pos)
 
-PARAM_GROUP_START(arelative_pos)
+PARAM_GROUP_START(relative_pos)
 PARAM_ADD(PARAM_FLOAT, noiFlowX, &procNoise_velX) // make sure the name is not too long
 PARAM_ADD(PARAM_FLOAT, noiFlowY, &procNoise_velY) // make sure the name is not too long
 PARAM_ADD(PARAM_FLOAT, noiFlowZ, &procNoise_velZ) // make sure the name is not too long
@@ -345,4 +364,5 @@ PARAM_ADD(PARAM_FLOAT, noiGyroZ, &procNoise_ryaw)
 PARAM_ADD(PARAM_FLOAT, noiUWB, &measNoise_uwb)
 PARAM_ADD(PARAM_FLOAT, Ppos, &InitCovPos)
 PARAM_ADD(PARAM_FLOAT, Pyaw, &InitCovYaw)
-PARAM_GROUP_STOP(arelative_pos)
+PARAM_ADD(PARAM_FLOAT, led_thresh, &led_thresh)
+PARAM_GROUP_STOP(relative_pos)
