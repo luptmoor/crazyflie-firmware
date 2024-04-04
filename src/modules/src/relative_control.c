@@ -187,7 +187,7 @@ void relativeControlTask(void* arg) {
     keepFlying = command_share(selfID, keepFlying);
 
 
-    // If we should fly
+    // If we should fly and information can be read from the localisation
     if(relativeInfoRead((float *)relaVarInCtrl, (float *)inputVarInCtrl) && keepFlying) {
 
 
