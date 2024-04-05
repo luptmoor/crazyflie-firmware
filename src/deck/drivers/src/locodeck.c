@@ -134,6 +134,8 @@ static QueueHandle_t lppShortQueue;
 
 static uint32_t timeout;
 
+static uint8_t formationSet = 0;
+
 static STATS_CNT_RATE_DEFINE(spiWriteCount, 1000);
 static STATS_CNT_RATE_DEFINE(spiReadCount, 1000);
 
@@ -680,5 +682,7 @@ PARAM_GROUP_START(loco)
  * |   3   | TDoA 3 |\n
  */
 PARAM_ADD_CORE(PARAM_UINT8, mode, &algoOptions.userRequestedMode)
+
+PARAM_ADD(PARAM_UINT8, formationSet, &formationSet)
 
 PARAM_GROUP_STOP(loco)

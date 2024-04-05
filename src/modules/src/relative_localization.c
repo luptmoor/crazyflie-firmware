@@ -153,9 +153,9 @@ void relativeLocoTask(void* arg)
       }
     }
     failedConnections++;
-    if(failedConnections>100){
-      fullConnect = false; // disable control if there is no ranging after 1 second
-    }
+    // if(failedConnections>100){
+    //   fullConnect = false; // disable control if there is no ranging after 1 second
+    // }
 
 
     // Light up all LEDs if position of leader drone [0] is very certain

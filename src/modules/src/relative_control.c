@@ -31,7 +31,7 @@ static uint8_t layer_map[5] = {2, 4, 3, 1, 0};
 
 
 static float form_dx = 0.0f; // [m]
-static float form_dy = 0.5f; // [m]
+static float form_dy = 0.0f; // [m]
 static float form_dz = 0.0f; // [m]
 
 
@@ -216,8 +216,8 @@ void relativeControlTask(void* arg) {
       uint32_t ticks_since_takeoff = xTaskGetTickCount() - takeoff_tick;
       uint32_t ticks_since_height_change = xTaskGetTickCount() - height_change_tick;
 
-      // CONVERGENCE FLIGHT for 26s
-      if(ticks_since_takeoff < 27000) {
+      // CONVERGENCE FLIGHT for 24s
+      if(ticks_since_takeoff < 24000) {
         
         // ID1 starts on layer 1 = 1.10m.
         // ID2 starts on layer 2 = 1.40m;
@@ -243,14 +243,14 @@ void relativeControlTask(void* arg) {
       } else {
         // CONVERGENCE PROCEDURE FINISHED
         // Hold relative positions for 8s.
-        if ( (ticks_since_takeoff > 27000) && (ticks_since_takeoff < 35000) ){ 
+        if ( (ticks_since_takeoff > 24000) && (ticks_since_takeoff < 32000) ){ 
           srand((unsigned int) relaVarInCtrl[0][STATE_rlX]*100);
           formation0asCenter(targetX, targetY, targetZ);
           // NDI_formation0asCenter(targetX, targetY);
         }
 
         // FORMATION until crash / landing
-        if (ticks_since_takeoff > 35000) {
+        if (ticks_since_takeoff > 32000) {
           formation0asCenter(form_dx, form_dy, form_dz); 
           //-cosf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 + sinf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
           //-sinf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 - cosf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
@@ -272,32 +272,36 @@ void relativeControlTask(void* arg) {
       } 
     }
 
-
   }
 }
 
-void relativeControlInit(void)
-{
+
+void relativeControlInit(void) {
   if (isInit)
     return;
+
   selfID = (uint8_t)(((configblockGetRadioAddress()) & 0x000000000f) - 5);
 
-  xTaskCreate(relativeControlTask,"relative_Control",configMINIMAL_STACK_SIZE, NULL,3,NULL );
+   // If no formation set AND follower
+  if (form_dx == 0.0f && form_dy == 0.0f && form_dz == 0.0f) {
+    form_dx = selfID * 0.4f;
+    form_dy = selfID * 0.4f;
+  }
+
+  xTaskCreate(relativeControlTask,"relative_Control",configMINIMAL_STACK_SIZE, NULL, 3, NULL);
   height = 1.0f;
   initial_hover_height = 0.8f;
 
-  form_dx = selfID * 0.4f;
-  form_dy = selfID * 0.4f;
-  form_dz = 0.0f;
+ 
 
-  // convergence_procedure_velocity = 0.8f;
   isInit = true;
 }
 
 
 
-// Logging and Parameters
 
+
+// Logging and Parameters
 
 PARAM_GROUP_START(relative_ctrl)
 PARAM_ADD(PARAM_UINT8, keepFlying, &keepFlying)
