@@ -134,7 +134,7 @@ static QueueHandle_t lppShortQueue;
 
 static uint32_t timeout;
 
-static uint8_t formationSet = 0;
+uint8_t formationSet = 0;
 
 static STATS_CNT_RATE_DEFINE(spiWriteCount, 1000);
 static STATS_CNT_RATE_DEFINE(spiReadCount, 1000);

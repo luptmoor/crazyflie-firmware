@@ -8,6 +8,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include "locodeck.h"
+
 #include "param.h"
 
 #include "log.h"
@@ -35,7 +37,7 @@ static float measNoise_uwb = 0.15f;  //0.06;  // ranging deviation
 static float InitCovPos = 1000.0f;
 static float InitCovYaw = 1.0f;
 
-static float led_thresh = 0.3f;
+static float led_thresh = 0.2f;
 static float pdop = 1.0f;  // Position dilution of precision / standard decviation of distance estimate
 
 static relaVariable_t relaVar[NumUWB]; // Array of "structs" that contain P, ...

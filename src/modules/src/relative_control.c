@@ -8,6 +8,7 @@
 #include "debug.h"
 #include <stdlib.h> // random
 #include "lpsTwrTag.h" // UWBNum
+#include "locodeck.h"
 #include "configblock.h"
 #include "uart2.h"
 #include "log.h"
@@ -28,7 +29,6 @@ static float initial_hover_height;
 static float kf_init_layer_distance = 0.30f; // [m]
 static uint8_t layer_number;
 static uint8_t layer_map[5] = {2, 4, 3, 1, 0};
-
 
 static float form_dx = 0.0f; // [m]
 static float form_dy = 0.0f; // [m]
@@ -216,8 +216,8 @@ void relativeControlTask(void* arg) {
       uint32_t ticks_since_takeoff = xTaskGetTickCount() - takeoff_tick;
       uint32_t ticks_since_height_change = xTaskGetTickCount() - height_change_tick;
 
-      // CONVERGENCE FLIGHT for 24s
-      if(ticks_since_takeoff < 24000) {
+      // CONVERGENCE FLIGHT for 21s
+      if(ticks_since_takeoff < 21000) {
         
         // ID1 starts on layer 1 = 1.10m.
         // ID2 starts on layer 2 = 1.40m;
@@ -242,15 +242,15 @@ void relativeControlTask(void* arg) {
 
       } else {
         // CONVERGENCE PROCEDURE FINISHED
-        // Hold relative positions for 8s.
-        if ( (ticks_since_takeoff > 24000) && (ticks_since_takeoff < 32000) ){ 
+        // Hold relative positions for 5s.
+        if ( (ticks_since_takeoff > 21000) && (ticks_since_takeoff < 26000) ){ 
           srand((unsigned int) relaVarInCtrl[0][STATE_rlX]*100);
           formation0asCenter(targetX, targetY, targetZ);
           // NDI_formation0asCenter(targetX, targetY);
         }
 
         // FORMATION until crash / landing
-        if (ticks_since_takeoff > 32000) {
+        if (ticks_since_takeoff > 26000) {
           formation0asCenter(form_dx, form_dy, form_dz); 
           //-cosf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 + sinf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
           //-sinf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 - cosf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
