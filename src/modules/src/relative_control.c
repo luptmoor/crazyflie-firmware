@@ -8,7 +8,6 @@
 #include "debug.h"
 #include <stdlib.h> // random
 #include "lpsTwrTag.h" // UWBNum
-#include "locodeck.h"
 #include "configblock.h"
 #include "uart2.h"
 #include "log.h"
@@ -185,6 +184,7 @@ void relativeControlTask(void* arg) {
       continue; // Do not send commands to leader drone, as it is manually controlled
     }
 
+    // Follower drones: start up if leader has taken off
     keepFlying = command_share(selfID, keepFlying);
 
 
@@ -194,7 +194,7 @@ void relativeControlTask(void* arg) {
 
       // TAKE OFF if on ground
       if(onGround) {
-        estimatorKalmanInit(); // reseting kalman filter
+        estimatorKalmanInit(); // When leader drone takes off, VIO kalman filter is reset -> can be turned on anywhere
         vTaskDelay(M2T(2000));
         for (int i=0; i<50; i++) {
           setHoverSetpoint(&setpoint, 0, 0, initial_hover_height, 0);

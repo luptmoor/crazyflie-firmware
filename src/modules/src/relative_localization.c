@@ -8,8 +8,6 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "locodeck.h"
-
 #include "param.h"
 
 #include "log.h"
@@ -37,6 +35,14 @@ static float measNoise_uwb = 0.15f;  //0.06;  // ranging deviation
 static float InitCovPos = 1000.0f;
 static float InitCovYaw = 1.0f;
 
+// IEKF parameters
+static uint8_t iekf_count;
+static float iekf_diff;
+static float iekf_thresh = 0.00000001f;
+static const uint8_t iekf_maxiter = 10;
+static float eta[STATE_DIM_rl];
+static float eta_next[STATE_DIM_rl];
+
 static float led_thresh = 0.2f;
 static float pdop = 1.0f;  // Position dilution of precision / standard decviation of distance estimate
 
@@ -44,8 +50,8 @@ static relaVariable_t relaVar[NumUWB]; // Array of "structs" that contain P, ...
 static float inputVar[NumUWB][STATE_DIM_rl];
 
 static float A[STATE_DIM_rl][STATE_DIM_rl];
-static float h[STATE_DIM_rl] = {0};
-static arm_matrix_instance_f32 H = {1, STATE_DIM_rl, h};
+static float H[STATE_DIM_rl] = {0};
+static arm_matrix_instance_f32 Hm = {1, STATE_DIM_rl, (float *)H};
 static arm_matrix_instance_f32 Am = { STATE_DIM_rl, STATE_DIM_rl, (float *)A};
 
 // Temporary matrices for the covariance updates
@@ -84,16 +90,14 @@ static inline void mat_mult(const arm_matrix_instance_f32 * pSrcA, const arm_mat
 static inline float arm_sqrt(float32_t in)
 { float pOut = 0; arm_status result = arm_sqrt_f32(in, &pOut); configASSERT(ARM_MATH_SUCCESS == result); return pOut; }
 
-void relativeLocoInit(void)
-{
+void relativeLocoInit(void) {
   if (isInit)
     return;
   xTaskCreate(relativeLocoTask,"relative_Localization",ZRANGER_TASK_STACKSIZE, NULL,ZRANGER_TASK_PRI,NULL );
   isInit = true;
 }
 
-void relativeLocoTask(void* arg)
-{
+void relativeLocoTask(void* arg) {
   systemWaitStart();
   // Initialize EKF for relative localization
   for (int n=0; n<NumUWB; n++) {
@@ -172,8 +176,7 @@ void relativeLocoTask(void* arg)
   }
 }
 
-void relativeEKF(int n, float vxi, float vyi, float vzi, float ri, float hi, float vxj, float vyj, float vzj, float rj, float hj, uint16_t dij, float dt)
-{
+void relativeEKF(int n, float vxi, float vyi, float vzi, float ri, float hi, float vxj, float vyj, float vzj, float rj, float hj, uint16_t dij, float dt) {
   // some preprocessing
   arm_matrix_instance_f32 Pm = {STATE_DIM_rl, STATE_DIM_rl, (float *)relaVar[n].P};
   float cyaw = arm_cos_f32(relaVar[n].S[STATE_rlYaw]);
@@ -238,37 +241,85 @@ void relativeEKF(int n, float vxi, float vyi, float vzi, float ri, float hi, flo
   relaVar[n].P[3][3] += dt2*(2*procNoise_ryaw);
 
 
-  // Measurements matrix H (1x4)
-  xij = relaVar[n].S[STATE_rlX];
-  yij = relaVar[n].S[STATE_rlY];
-  zij = relaVar[n].S[STATE_rlZ];
-  float distPred = arm_sqrt(xij*xij+yij*yij+zij*zij)+0.0001f;
+  ////// Begin of IEKF Changes //////
+
+  // Do UWB bias calculation before the loop, beacause independent of iteration
   float distMeas = (float)(dij/1000.0f);
-  distMeas = distMeas - (0.048f*distMeas + 0.65f); // UWB bias model
-
-  dist[n] = distMeas;
-  h[0] = xij/distPred;
-  h[1] = yij/distPred;
-  h[2] = zij/distPred;
-  h[3] = 0;
+  distMeas = distMeas - (0.048f*distMeas + 0.65f);
+  dist[n] = distMeas; // logging
 
 
+  // Initialise iteration
+  iekf_count = 0;
+  iekf_diff = 2 * iekf_thresh; // just something > thresh
+  eta_next[STATE_rlX] = relaVar[n].S[STATE_rlX];
+  eta_next[STATE_rlY] = relaVar[n].S[STATE_rlY];
+  eta_next[STATE_rlZ] = relaVar[n].S[STATE_rlZ];
+  eta_next[STATE_rlYaw] = relaVar[n].S[STATE_rlYaw];
 
-  // 3. Kalman Gain and 4. State Update
-  mat_trans(&H, &HTm); // H'
-  mat_mult(&Pm, &HTm, &PHTm); // PH'
-  float HPHR = powf(measNoise_uwb, 2);// HPH' + R
-  for (int i=0; i<STATE_DIM_rl; i++) { // Add the element of HPH' to the above
-    HPHR += H.pData[i]*PHTd[i]; // this obviously only works if the update is scalar (as in this function)
+
+  while (iekf_diff > iekf_thresh && iekf_count <= iekf_maxiter) {
+    iekf_count++;
+    float x = eta_next[STATE_rlX];
+    float y = eta_next[STATE_rlY];
+    float z = eta_next[STATE_rlZ];
+    eta[STATE_rlX] = x;
+    eta[STATE_rlY] = y;
+    eta[STATE_rlZ] = z;
+
+    float distPred = arm_sqrt(x*x + y*y + z*z) + 0.0001f; // distPred, follow Sven's equation
+
+    // Measurement matrix
+    H[STATE_rlX] = x/distPred; 
+    H[STATE_rlY] = y/distPred;
+    H[STATE_rlZ] = z/distPred;
+    H[STATE_rlYaw] = 0;
+
+
+    // 3. Kalman Gain and State Update
+
+    // HPH' + R 1x1
+    mat_trans(&Hm, &HTm); // H'
+    mat_mult(&Pm, &HTm, &PHTm); // PH'
+    float HPHR = powf(measNoise_uwb, 2);// R
+    for (int i=0; i<STATE_DIM_rl; i++) { // Add the element of HPH' to the above
+      HPHR += Hm.pData[i]*PHTd[i]; // this obviously only works if the update is scalar (as in this function)
+    }
+
+
+    // IEKF term 1x1
+    float iekf_term = 0;
+    for (int i=0; i<STATE_DIM_rl; i++) {
+      iekf_term += H[i] * (relaVar[n].S[i] - eta[i]);
+      // Hx @ (pred - eta)
+    }
+
+
+    iekf_diff = 0.0f;
+    float denom = 0.0f;
+    for (int i=0; i<STATE_DIM_rl; i++) {
+      K[i] = PHTd[i]/HPHR; // kalman gain = (PH' (HPH' + R )^-1) 1x4
+      eta_next[i] = relaVar[n].S[i] + K[i] * (distMeas - distPred - iekf_term); // state update
+      //              prediction    + gain * (obs - pred obs - IEKF term)
+      iekf_diff += (eta_next[i] - eta[i]) * (eta_next[i] - eta[i]);
+      denom += eta[i] * eta[i];
+    }
+
+    // Relative change of state estimate between iterations. If below threshold -> break loop
+    iekf_diff = arm_sqrt(iekf_diff / denom);
   }
 
-  for (int i=0; i<STATE_DIM_rl; i++) {
-    K[i] = PHTd[i]/HPHR; // kalman gain = (PH' (HPH' + R )^-1)
-    relaVar[n].S[i] = relaVar[n].S[i] + K[i] * (distMeas - distPred); // state update
-  }     
+  // After convergence, latest estimate is passed on
+  relaVar[n].S[STATE_rlX] = eta_next[STATE_rlX];
+  relaVar[n].S[STATE_rlY] = eta_next[STATE_rlY];
+  relaVar[n].S[STATE_rlZ] = eta_next[STATE_rlZ];
+  relaVar[n].S[STATE_rlYaw] = eta_next[STATE_rlYaw];
+
+
+  ///////////// End of IEKF changes ///////////////////
 
   // 5. Error Covariance Matrix P_k+1_k+1
-  mat_mult(&Km, &H, &tmpNN1m); // KH
+  mat_mult(&Km, &Hm, &tmpNN1m); // KH
   for (int i=0; i<STATE_DIM_rl; i++) { tmpNN1d[STATE_DIM_rl*i+i] -= 1; } // KH - I
   mat_trans(&tmpNN1m, &tmpNN2m); // (KH - I)'
   mat_mult(&tmpNN1m, &Pm, &tmpNN3m); // (KH - I)*P
@@ -279,7 +330,7 @@ bool relativeInfoRead(float* relaVarParam, float* inputVarParam){
   if(fullConnect){
     for(int i=0; i<NumUWB; i++){
 
-      // States and inputs can be accessed from controller. TODO: send error covariance too to judge convergence
+      // States and inputs can be accessed from controller. Idea: send error covariance too to judge convergence
       *(relaVarParam + i*STATE_DIM_rl + STATE_rlX) = relaVar[i].S[STATE_rlX];
       *(relaVarParam + i*STATE_DIM_rl + STATE_rlY) = relaVar[i].S[STATE_rlY];
       *(relaVarParam + i*STATE_DIM_rl + STATE_rlZ) = relaVar[i].S[STATE_rlZ];
