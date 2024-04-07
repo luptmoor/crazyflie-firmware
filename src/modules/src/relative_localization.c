@@ -38,10 +38,11 @@ static float InitCovYaw = 1.0f;
 // IEKF parameters
 static uint8_t iekf_count;
 static float iekf_diff;
-static float iekf_thresh = 0.00000001f;
-static const uint8_t iekf_maxiter = 10;
+static float iekf_thresh = 0.1f;
+static const uint8_t iekf_maxiter = 120;
 static float eta[STATE_DIM_rl];
 static float eta_next[STATE_DIM_rl];
+static uint8_t x_count;
 
 static float led_thresh = 0.2f;
 static float pdop = 1.0f;  // Position dilution of precision / standard decviation of distance estimate
@@ -170,8 +171,12 @@ void relativeLocoTask(void* arg) {
       ledSetAll();
     } else {
       ledClearAll();
-    
     }
+    // ledClearAll();
+    // if (x_count > 60) ledSet(LED_BLUE_L, true);
+    // if (x_count > 190) ledSet(LED_GREEN_L, true);
+    // if (x_count > 195) ledSet(LED_GREEN_R, true);
+
 
   }
 }
@@ -292,7 +297,7 @@ void relativeEKF(int n, float vxi, float vyi, float vzi, float ri, float hi, flo
     for (int i=0; i<STATE_DIM_rl; i++) {
       iekf_term += H[i] * (relaVar[n].S[i] - eta[i]);
       // Hx @ (pred - eta)
-    }
+    } 
 
 
     iekf_diff = 0.0f;
@@ -315,6 +320,7 @@ void relativeEKF(int n, float vxi, float vyi, float vzi, float ri, float hi, flo
   relaVar[n].S[STATE_rlZ] = eta_next[STATE_rlZ];
   relaVar[n].S[STATE_rlYaw] = eta_next[STATE_rlYaw];
 
+  if (n==0) x_count = iekf_count;
 
   ///////////// End of IEKF changes ///////////////////
 
