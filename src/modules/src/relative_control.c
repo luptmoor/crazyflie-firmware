@@ -29,10 +29,6 @@ static float kf_init_layer_distance = 0.30f; // [m]
 static uint8_t layer_number;
 static uint8_t layer_map[5] = {2, 4, 3, 1, 0};
 
-static float form_dx = 0.0f; // [m]
-static float form_dy = 0.0f; // [m]
-static float form_dz = 0.0f; // [m]
-
 
 static float relaCtrl_p = 2.0f;
 static float relaCtrl_i = 0.0001f;
@@ -242,18 +238,15 @@ void relativeControlTask(void* arg) {
       } else {
         // CONVERGENCE PROCEDURE FINISHED
         // Hold relative positions for 5s.
-        if ( (ticks_since_takeoff > 21000) && (ticks_since_takeoff < 26000) ){ 
+        if ( (ticks_since_takeoff > 21000)){ 
           srand((unsigned int) relaVarInCtrl[0][STATE_rlX]*100);
           formation0asCenter(targetX, targetY, targetZ);
           // NDI_formation0asCenter(targetX, targetY);
         }
-
-        // FORMATION until crash / landing
-        if (ticks_since_takeoff > 26000) {
-          formation0asCenter(form_dx, form_dy, form_dz); 
+       
           //-cosf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 + sinf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
           //-sinf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 - cosf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
-        }
+        
       }
 
 
@@ -281,12 +274,6 @@ void relativeControlInit(void) {
 
   selfID = (uint8_t)(((configblockGetRadioAddress()) & 0x000000000f) - 5);
 
-   // If no formation set AND follower
-  if (form_dx == 0.0f && form_dy == 0.0f && form_dz == 0.0f) {
-    form_dx = selfID * 0.4f;
-    form_dy = selfID * 0.4f;
-  }
-
   xTaskCreate(relativeControlTask,"relative_Control",configMINIMAL_STACK_SIZE, NULL, 3, NULL);
   height = 1.0f;
   initial_hover_height = 0.8f;
@@ -307,9 +294,6 @@ PARAM_ADD(PARAM_UINT8, keepFlying, &keepFlying)
 PARAM_ADD(PARAM_FLOAT, relaCtrl_p, &relaCtrl_p)
 PARAM_ADD(PARAM_FLOAT, relaCtrl_i, &relaCtrl_i)
 PARAM_ADD(PARAM_FLOAT, relaCtrl_d, &relaCtrl_d)
-PARAM_ADD(PARAM_FLOAT, form_dx, &form_dx)
-PARAM_ADD(PARAM_FLOAT, form_dy, &form_dy)
-PARAM_ADD(PARAM_FLOAT, form_dz, &form_dz)
 
 PARAM_GROUP_STOP(relative_ctrl)
 
