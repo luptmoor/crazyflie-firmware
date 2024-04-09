@@ -30,6 +30,10 @@ static uint8_t layer_number;
 static uint8_t layer_map[5] = {2, 4, 3, 1, 0};
 
 static uint8_t in_sight = true;
+static float datum_x = 0.0f;
+static float datum_y = 0.0f;
+static float datum_z = 0.0f;
+static uint8_t datum_id = 0;
 
 
 static float relaCtrl_p = 2.0f;
@@ -293,14 +297,14 @@ void relativeControlInit(void) {
 
 PARAM_GROUP_START(relative_ctrl)
 PARAM_ADD(PARAM_UINT8, keepFlying, &keepFlying)
-PARAM_ADD(PARAM_FLOAT, relaCtrl_p, &relaCtrl_p)
-PARAM_ADD(PARAM_FLOAT, relaCtrl_i, &relaCtrl_i)
-PARAM_ADD(PARAM_FLOAT, relaCtrl_d, &relaCtrl_d)
+// PARAM_ADD(PARAM_FLOAT, relaCtrl_p, &relaCtrl_p)
+// PARAM_ADD(PARAM_FLOAT, relaCtrl_i, &relaCtrl_i)
+// PARAM_ADD(PARAM_FLOAT, relaCtrl_d, &relaCtrl_d)
 
 PARAM_ADD(PARAM_UINT8, in_sight, &in_sight)
+PARAM_ADD(PARAM_FLOAT, datum_x, &datum_x)
+PARAM_ADD(PARAM_FLOAT, datum_y, &datum_y)
+PARAM_ADD(PARAM_FLOAT, datum_z, &datum_z)
+PARAM_ADD(PARAM_UINT8, datum_id, &datum_id)
 
 PARAM_GROUP_STOP(relative_ctrl)
-
-LOG_GROUP_START(mono_cam)
-LOG_ADD(LOG_UINT8, charCam, &c)
-LOG_GROUP_STOP(mono_cam)
