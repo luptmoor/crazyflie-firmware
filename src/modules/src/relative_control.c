@@ -29,6 +29,8 @@ static float kf_init_layer_distance = 0.30f; // [m]
 static uint8_t layer_number;
 static uint8_t layer_map[5] = {2, 4, 3, 1, 0};
 
+static uint8_t in_sight = true;
+
 
 static float relaCtrl_p = 2.0f;
 static float relaCtrl_i = 0.0001f;
@@ -294,6 +296,8 @@ PARAM_ADD(PARAM_UINT8, keepFlying, &keepFlying)
 PARAM_ADD(PARAM_FLOAT, relaCtrl_p, &relaCtrl_p)
 PARAM_ADD(PARAM_FLOAT, relaCtrl_i, &relaCtrl_i)
 PARAM_ADD(PARAM_FLOAT, relaCtrl_d, &relaCtrl_d)
+
+PARAM_ADD(PARAM_UINT8, in_sight, &in_sight)
 
 PARAM_GROUP_STOP(relative_ctrl)
 
