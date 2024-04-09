@@ -295,7 +295,7 @@ void relativeControlInit(void) {
 
 // Logging and Parameters
 
-PARAM_GROUP_START(relative_ctrl)
+PARAM_GROUP_START(arswarm)
 PARAM_ADD(PARAM_UINT8, keepFlying, &keepFlying)
 // PARAM_ADD(PARAM_FLOAT, relaCtrl_p, &relaCtrl_p)
 // PARAM_ADD(PARAM_FLOAT, relaCtrl_i, &relaCtrl_i)
@@ -307,4 +307,9 @@ PARAM_ADD(PARAM_FLOAT, datum_y, &datum_y)
 PARAM_ADD(PARAM_FLOAT, datum_z, &datum_z)
 PARAM_ADD(PARAM_UINT8, datum_id, &datum_id)
 
-PARAM_GROUP_STOP(relative_ctrl)
+
+PARAM_GROUP_STOP(arswarm)
+
+LOG_GROUP_START(mono_cam)
+LOG_ADD(LOG_UINT8, charCam, &c)
+LOG_GROUP_STOP(mono_cam)
