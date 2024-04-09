@@ -8,7 +8,6 @@
 #include "debug.h"
 #include <stdlib.h> // random
 #include "lpsTwrTag.h" // UWBNum
-#include "locodeck.h"
 #include "configblock.h"
 #include "uart2.h"
 #include "log.h"

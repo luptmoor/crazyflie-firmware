@@ -8,8 +8,6 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "locodeck.h"
-
 #include "param.h"
 
 #include "log.h"
@@ -349,7 +347,7 @@ LOG_ADD(LOG_FLOAT, rlY2, &relaVar[2].S[STATE_rlY])
 LOG_ADD(LOG_FLOAT, rlZ2, &relaVar[2].S[STATE_rlZ])
 LOG_ADD(LOG_FLOAT, rlYaw2, &relaVar[2].S[STATE_rlYaw])
 LOG_ADD(LOG_FLOAT, dist2, &dist[2])
-LOG_ADD(LOG_FLOAT, rlX3, &relaVar[3].S[STATE_rlX])
+LOG_ADD(LOG_FLOAT, rlX3, &relaVar[3].S[STATE_rlX])  // What happens if NumUWB = 2? 
 LOG_ADD(LOG_FLOAT, rlY3, &relaVar[3].S[STATE_rlY])
 LOG_ADD(LOG_FLOAT, rlZ3, &relaVar[3].S[STATE_rlZ])
 LOG_ADD(LOG_FLOAT, rlYaw3, &relaVar[3].S[STATE_rlYaw])

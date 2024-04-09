@@ -172,11 +172,11 @@ static void rxcallback(dwDevice_t *dev) {
             median_data[current_receiveID].index_inserting = 0;
           median_data[current_receiveID].distance_history[median_data[current_receiveID].index_inserting] = calcDist;        
           rangingOk = true;
-          state.vx[current_receiveID] = report->selfVx;
-          state.vy[current_receiveID] = report->selfVy;
-          state.vz[current_receiveID] = report->selfVz;
-          state.gz[current_receiveID] = report->selfGz;
-          state.h[current_receiveID]  = report->selfh;
+          state.vx[current_receiveID] = report->selfVx; // read out vx
+          state.vy[current_receiveID] = report->selfVy; // read out vy
+          state.vz[current_receiveID] = report->selfVz; // read out vz
+          state.gz[current_receiveID] = report->selfGz; // read out yaw rate
+          state.h[current_receiveID]  = report->selfh; // read out height
           if(current_receiveID==0)
             state.keep_flying = report->keep_flying;
           state.refresh[current_receiveID] = true;
