@@ -14,6 +14,8 @@
 #include <math.h>
 #include "arm_math.h"
 #include "estimator_kalman.h"
+#include "estimator.h"
+
 #define USE_MONOCAM 0
 
 static bool isInit;
@@ -39,6 +41,8 @@ static float xAbs;
 static float yAbs;
 static float zAbs;
 static float psiAbs;
+
+static positionMeasurement_t absPos;
 
 // static float relaCtrl_p = 2.0f;
 // static float relaCtrl_i = 0.0001f;
@@ -145,17 +149,21 @@ void relativeControlTask(void* arg) {
       zAB = relaVarInCtrl[datum_id][STATE_rlZ];
       psiAB = relaVarInCtrl[datum_id][STATE_rlYaw];
 
-
+      /// TODO: Investigate if minus should be used after datum_xyz
       psiAbs = datum_psi - psiAB;
       xAbs = datum_x + xAB * arm_cos_f32(psiAbs) + yAB * arm_sin_f32(psiAbs);
       yAbs = datum_y + xAB * arm_sin_f32(psiAbs) + yAB * arm_cos_f32(psiAbs);
       zAbs = datum_z + zAB;
 
+      absPos.x = xAbs;
+      absPos.y = yAbs;
+      absPos.z = zAbs;
+
+      estimatorEnqueuePosition(&absPos);
+
 
 
       //formation0asCenter(xAB, yAB, zAB);
-
-
 
       
         
