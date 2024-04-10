@@ -188,7 +188,7 @@ void relativeControlInit(void) {
   if (isInit)
     return;
 
-  selfID = (uint8_t)(((configblockGetRadioAddress()) & 0x000000000f) - 5);
+  selfID = (uint8_t)(((configblockGetRadioAddress()) & 0x000000000f) - 1);
 
   xTaskCreate(relativeControlTask,"relative_Control",configMINIMAL_STACK_SIZE, NULL, 3, NULL);
   isInit = true;

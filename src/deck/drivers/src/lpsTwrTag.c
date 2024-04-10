@@ -356,7 +356,7 @@ static void twrTagInit(dwDevice_t *dev)
   memset(&final_tx, 0, sizeof(final_tx));
   memset(&final_rx, 0, sizeof(final_rx));
 
-  selfID = (uint8_t)(((configblockGetRadioAddress()) & 0x000000000f) - 5);
+  selfID = (uint8_t)(((configblockGetRadioAddress()) & 0x000000000f) - 1);
   selfAddress = basicAddr + selfID;
 
   // Communication logic between each UWB
