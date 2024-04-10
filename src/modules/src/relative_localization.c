@@ -82,16 +82,14 @@ static inline void mat_mult(const arm_matrix_instance_f32 * pSrcA, const arm_mat
 static inline float arm_sqrt(float32_t in)
 { float pOut = 0; arm_status result = arm_sqrt_f32(in, &pOut); configASSERT(ARM_MATH_SUCCESS == result); return pOut; }
 
-void relativeLocoInit(void)
-{
+void relativeLocoInit(void) {
   if (isInit)
     return;
   xTaskCreate(relativeLocoTask,"relative_Localization",ZRANGER_TASK_STACKSIZE, NULL,ZRANGER_TASK_PRI,NULL );
   isInit = true;
 }
 
-void relativeLocoTask(void* arg)
-{
+void relativeLocoTask(void* arg) {
   systemWaitStart();
   // Initialize EKF for relative localization
   for (int n=0; n<NumUWB; n++) {
@@ -170,8 +168,7 @@ void relativeLocoTask(void* arg)
   }
 }
 
-void relativeEKF(int n, float vxi, float vyi, float vzi, float ri, float hi, float vxj, float vyj, float vzj, float rj, float hj, uint16_t dij, float dt)
-{
+void relativeEKF(int n, float vxi, float vyi, float vzi, float ri, float hi, float vxj, float vyj, float vzj, float rj, float hj, uint16_t dij, float dt) {
   // some preprocessing
   arm_matrix_instance_f32 Pm = {STATE_DIM_rl, STATE_DIM_rl, (float *)relaVar[n].P};
   float cyaw = arm_cos_f32(relaVar[n].S[STATE_rlYaw]);
