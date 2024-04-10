@@ -14,53 +14,32 @@
 #include <math.h>
 #include "arm_math.h"
 #include "estimator_kalman.h"
-#include "estimator.h"
-
-#define USE_MONOCAM 0
 
 static bool isInit;
-static bool keepFlying = true;
-static setpoint_t setpoint;
-static float relaVarInCtrl[NumUWB][STATE_DIM_rl];
-static float inputVarInCtrl[NumUWB][STATE_DIM_rl];
+// static bool keepFlying = true;
+// // static setpoint_t setpoint;
+// static float relaVarInCtrl[NumUWB][STATE_DIM_rl];
+// static float inputVarInCtrl[NumUWB][STATE_DIM_rl];
 static uint8_t selfID;
 
-static uint8_t in_sight = true;
-static float datum_x = 0.0f;
-static float datum_y = 0.0f;
-static float datum_z = 0.0f;
-static float datum_psi = 0.0f;
-static uint8_t datum_id = 0;
-
-static float xAB;
-static float yAB;
-static float zAB;
-static float psiAB;
-
-static float xAbs;
-static float yAbs;
-static float zAbs;
-static float psiAbs;
-
-static positionMeasurement_t absPos;
 
 // static float relaCtrl_p = 2.0f;
 // static float relaCtrl_i = 0.0001f;
 // static float relaCtrl_d = 0.01f;
 
 
-static void setHoverSetpoint(setpoint_t *setpoint, float vx, float vy, float z, float yawrate) {
-  setpoint->mode.z = modeAbs;
-  setpoint->position.z = z;
-  setpoint->mode.yaw = modeVelocity;
-  setpoint->attitudeRate.yaw = yawrate;
-  setpoint->mode.x = modeVelocity;
-  setpoint->mode.y = modeVelocity;
-  setpoint->velocity.x = vx;
-  setpoint->velocity.y = vy;
-  setpoint->velocity_body = true;
-  commanderSetSetpoint(setpoint, 3);
-}
+// static void setHoverSetpoint(setpoint_t *setpoint, float vx, float vy, float z, float yawrate) {
+//   setpoint->mode.z = modeAbs;
+//   setpoint->position.z = z;
+//   setpoint->mode.yaw = modeVelocity;
+//   setpoint->attitudeRate.yaw = yawrate;
+//   setpoint->mode.x = modeVelocity;
+//   setpoint->mode.y = modeVelocity;
+//   setpoint->velocity.x = vx;
+//   setpoint->velocity.y = vy;
+//   setpoint->velocity_body = true;
+//   commanderSetSetpoint(setpoint, 3);
+// }
 
 // static void set3DVel(setpoint_t *setpoint, float vx, float vy, float vz, float yawrate) {
 //   setpoint->mode.z = modeVelocity;
@@ -131,54 +110,28 @@ void relativeControlTask(void* arg) {
 
   // Main Loop
   while(1) {
-    vTaskDelay(10);
-    DEBUG_PRINT("Control loop\n");
-    if(in_sight){
-      ///TODO: pass position estimate to relative positioning
-      continue; // Do not do anything if in sight of AR headset
-    }
+    // vTaskDelay(10); 
+    continue;
+    // // If we should fly and information can be read from the relative UWB localisation
+    // if(relativeInfoRead((float *)relaVarInCtrl, (float *)inputVarInCtrl) && keepFlying) {
 
 
-
-    // If we should fly and information can be read from the relative UWB localisation
-    if(relativeInfoRead((float *)relaVarInCtrl, (float *)inputVarInCtrl) && keepFlying) {
-
-      // Hold relative Position to leader drone. CONVERGENCE ASSUMED
-      xAB = relaVarInCtrl[datum_id][STATE_rlX];
-      yAB = relaVarInCtrl[datum_id][STATE_rlY];
-      zAB = relaVarInCtrl[datum_id][STATE_rlZ];
-      psiAB = relaVarInCtrl[datum_id][STATE_rlYaw];
-
-      /// TODO: Investigate if minus should be used after datum_xyz
-      psiAbs = datum_psi - psiAB;
-      xAbs = datum_x + xAB * arm_cos_f32(psiAbs) + yAB * arm_sin_f32(psiAbs);
-      yAbs = datum_y + xAB * arm_sin_f32(psiAbs) + yAB * arm_cos_f32(psiAbs);
-      zAbs = datum_z + zAB;
-
-      absPos.x = xAbs;
-      absPos.y = yAbs;
-      absPos.z = zAbs;
-
-      estimatorEnqueuePosition(&absPos);
-
-
-
-      //formation0asCenter(xAB, yAB, zAB);
+    //   //formation0asCenter(xAB, yAB, zAB);
 
       
         
-          //-cosf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 + sinf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
-          //-sinf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 - cosf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
+    //       //-cosf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 + sinf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
+    //       //-sinf(relaVarInCtrl[0][STATE_rlYaw])*relaXof2in1 - cosf(relaVarInCtrl[0][STATE_rlYaw])*relaYof2in1;
 
-    // If we should not fly: LANDING procedure
-    } else {
-      for (int i=1; i<5; i++) {
-        if(selfID!=0){
-        setHoverSetpoint(&setpoint, 0, 0, 0.3f-(float)i*0.05f, 0);
-        vTaskDelay(M2T(10));
-        }
-      }
-    }
+    // // If we should not fly: LANDING procedure
+    // } else {
+    //   for (int i=1; i<5; i++) {
+    //     if(selfID!=0){
+    //     setHoverSetpoint(&setpoint, 0, 0, 0.3f-(float)i*0.05f, 0);
+    //     vTaskDelay(M2T(10));
+    //     }
+    //   }
+    // }
 
   }
 }
@@ -195,33 +148,6 @@ void relativeControlInit(void) {
 }
 
 
-
-
-// Logging and Parameters
-
-PARAM_GROUP_START(arswarm)
-PARAM_ADD(PARAM_UINT8, keepFlying, &keepFlying)
-// PARAM_ADD(PARAM_FLOAT, relaCtrl_p, &relaCtrl_p)
-// PARAM_ADD(PARAM_FLOAT, relaCtrl_i, &relaCtrl_i)
-// PARAM_ADD(PARAM_FLOAT, relaCtrl_d, &relaCtrl_d)
-
-PARAM_ADD(PARAM_UINT8, in_sight, &in_sight)
-PARAM_ADD(PARAM_FLOAT, datum_x, &datum_x)
-PARAM_ADD(PARAM_FLOAT, datum_y, &datum_y)
-PARAM_ADD(PARAM_FLOAT, datum_z, &datum_z)
-PARAM_ADD(PARAM_FLOAT, datum_psi, &datum_psi)
-PARAM_ADD(PARAM_UINT8, datum_id, &datum_id)
-
-PARAM_GROUP_STOP(arswarm)
-
-
-LOG_GROUP_START(arswarm)
-LOG_ADD(LOG_FLOAT, xAbs, &xAbs)
-LOG_ADD(LOG_FLOAT, yAbs, &yAbs)
-LOG_ADD(LOG_FLOAT, zAbs, &zAbs)
-LOG_ADD(LOG_FLOAT, psiAbs, &psiAbs)
-
-LOG_GROUP_STOP(arswarm)
 
 
 

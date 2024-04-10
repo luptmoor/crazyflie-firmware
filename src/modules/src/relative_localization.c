@@ -15,6 +15,7 @@
 #include "led.h"
 
 #include <radiolink.h>
+#include "estimator.h"
 #include "estimator_kalman.h"
 #include "lpsTwrTag.h"
 
@@ -37,6 +38,27 @@ static float InitCovYaw = 1.0f;
 
 static float led_thresh = 0.2f;
 static float pdop = 1.0f;  // Position dilution of precision / standard decviation of distance estimate
+
+static uint8_t in_sight = 1;
+static float datum_x = 0.0f;
+static float datum_y = 0.0f;
+static float datum_z = 0.0f;
+static float datum_psi = 0.0f;
+static uint8_t datum_id = 0;
+
+static float xAB = 0.0f;
+static float yAB = 0.0f;
+static float zAB = 0.0f;
+static float psiAB = 0.0f;
+
+static float xAbs = 0.0f;
+static float yAbs = 0.0f;
+static float zAbs = 0.0f;
+static float psiAbs = 0.0f;
+
+static positionMeasurement_t absPos;
+
+
 
 static relaVariable_t relaVar[NumUWB]; // Array of "structs" that contain P, ...
 static float inputVar[NumUWB][STATE_DIM_rl];
@@ -61,7 +83,6 @@ static float PHTd[STATE_DIM_rl * 1];
 static arm_matrix_instance_f32 PHTm = {STATE_DIM_rl, 1, PHTd};
 
 static bool fullConnect = false; // a flag for control (fly or not)
-static int8_t failedConnections = 0; // watchdog for detecting the connection
 
 static float vxj, vyj, vzj, rj; // receive vx, vy, vz, gz
 static float vxi, vyi, vzi, ri; // self vx, vy, vz, gz
@@ -91,24 +112,24 @@ void relativeLocoInit(void) {
 
 void relativeLocoTask(void* arg) {
   systemWaitStart();
-  // Initialize EKF for relative localization
   for (int n=0; n<NumUWB; n++) {
     for (int i=0; i<STATE_DIM_rl; i++) {
       for (int j=0; j<STATE_DIM_rl; j++) {
         relaVar[n].P[i][j] = 0;
       }
     }
+
+    // Initialise relative state as zero in case the AR update fails
+    relaVar[n].S[STATE_rlX] = 0;
+    relaVar[n].S[STATE_rlY] = 0;
+    relaVar[n].S[STATE_rlZ] = 0;
+    relaVar[n].S[STATE_rlYaw] = 0;
+
     // Initialise error covariance matrix with variances on diagonal
     relaVar[n].P[STATE_rlX][STATE_rlX] = InitCovPos;
     relaVar[n].P[STATE_rlY][STATE_rlY] = InitCovPos;
     relaVar[n].P[STATE_rlZ][STATE_rlZ] = InitCovPos;
     relaVar[n].P[STATE_rlYaw][STATE_rlYaw] = InitCovYaw;  
-
-    // Initialise relative state
-    relaVar[n].S[STATE_rlX] = 0;
-    relaVar[n].S[STATE_rlY] = 0;
-    relaVar[n].S[STATE_rlZ] = 0;
-    relaVar[n].S[STATE_rlYaw] = 0;
 
     relaVar[n].receiveFlag = false;
   }
@@ -120,40 +141,66 @@ void relativeLocoTask(void* arg) {
     vTaskDelay(10);
     for (int n=0; n<NumUWB; n++) {
 
-      // If data received from peer drone n
-      if (twrGetSwarmInfo(n, &dij, &vxj, &vyj, &vzj, &rj, &hj)){
-        // Reset failed connections counter
-        failedConnections = 0;
+      // AR Swarm part
+      if (in_sight==1) {
+        continue;
 
-        estimatorKalmanGetSwarmInfo(&vxi, &vyi, &vzi, &ri, &hi);
+        /// TODO: Initialise relative kalman filter with estimates from AR headset
+        //  relaVar[n].S[STATE_rlX] = 0;
+        // relaVar[n].S[STATE_rlY] = 0;
+        // relaVar[n].S[STATE_rlZ] = 0;
+        // relaVar[n].S[STATE_rlYaw] = 0;
 
-        if(relaVar[n].receiveFlag){
-          uint32_t osTick = xTaskGetTickCount();
-          float dtEKF = (float)(osTick - relaVar[n].oldTimetick)/configTICK_RATE_HZ;
-          relaVar[n].oldTimetick = osTick;
+      // Not in sight
+      } else {
 
-          //Estimate state
-          relativeEKF(n, vxi, vyi, vzi, ri, hi, vxj, vyj, vzj, rj, hj, dij, dtEKF);
-          if(n==1){hij = hj-hi;}
+        // If data received from peer drone n: fetch own data
+        if (twrGetSwarmInfo(n, &dij, &vxj, &vyj, &vzj, &rj, &hj)){
+          estimatorKalmanGetSwarmInfo(&vxi, &vyi, &vzi, &ri, &hi);
 
-          
+          if(relaVar[n].receiveFlag){
+            uint32_t osTick = xTaskGetTickCount();
+            float dtEKF = (float)(osTick - relaVar[n].oldTimetick)/configTICK_RATE_HZ;
+            relaVar[n].oldTimetick = osTick;
 
-          // Update Kalman model inputs
-          inputVar[n][STATE_rlX] = vxj;
-          inputVar[n][STATE_rlY] = vyj;
-          inputVar[n][STATE_rlZ] = vzj;
-          inputVar[n][STATE_rlYaw] = rj;
+            // 1. Estimate relative positions
+            relativeEKF(n, vxi, vyi, vzi, ri, hi, vxj, vyj, vzj, rj, hj, dij, dtEKF);
+            if(n==1){hij = hj-hi;}
+
+            // Update Kalman model inputs
+            inputVar[n][STATE_rlX] = vxj;
+            inputVar[n][STATE_rlY] = vyj;
+            inputVar[n][STATE_rlZ] = vzj;
+            inputVar[n][STATE_rlYaw] = rj;
+
+
+            // 2. Estimate absolute position of this drone and send to estimator
+            xAB = relaVar[datum_id].S[STATE_rlX];
+            yAB = relaVar[datum_id].S[STATE_rlY];
+            zAB = relaVar[datum_id].S[STATE_rlZ];
+            psiAB = relaVar[datum_id].S[STATE_rlYaw];
+
+            /// TODO: Investigate if minus should be used after datum_xyz
+            psiAbs = datum_psi - psiAB;
+            xAbs = datum_x + xAB * arm_cos_f32(psiAbs) + yAB * arm_sin_f32(psiAbs);
+            yAbs = datum_y + xAB * arm_sin_f32(psiAbs) + yAB * arm_cos_f32(psiAbs);
+            zAbs = datum_z + zAB;
+
+            absPos.x = xAbs;
+            absPos.y = yAbs;
+            absPos.z = zAbs;
+
+            estimatorEnqueuePosition(&absPos);
+          } 
+
         } else {
           relaVar[n].oldTimetick = xTaskGetTickCount();
           relaVar[n].receiveFlag = true;
           fullConnect = true;
         }
+
       }
     }
-    failedConnections++;
-    // if(failedConnections>100){
-    //   fullConnect = false; // disable control if there is no ranging after 1 second
-    // }
 
 
     // Light up all LEDs if position of leader drone [0] is very certain
@@ -328,40 +375,58 @@ bool relativeInfoRead(float* relaVarParam, float* inputVarParam){
 // LOG_ADD(LOG_FLOAT, r1, &inputVar[1][STATE_rlYaw])
 // LOG_GROUP_STOP(swarmInput)
 
-LOG_GROUP_START(relative_pos)
-LOG_ADD(LOG_FLOAT, rlX0, &relaVar[0].S[STATE_rlX])
-LOG_ADD(LOG_FLOAT, rlY0, &relaVar[0].S[STATE_rlY])
-LOG_ADD(LOG_FLOAT, rlZ0, &relaVar[0].S[STATE_rlZ])
-LOG_ADD(LOG_FLOAT, rlYaw0, &relaVar[0].S[STATE_rlYaw])
-LOG_ADD(LOG_FLOAT, dist0, &dist[0])
-LOG_ADD(LOG_FLOAT, rlX1, &relaVar[1].S[STATE_rlX])
-LOG_ADD(LOG_FLOAT, rlY1, &relaVar[1].S[STATE_rlY])
-LOG_ADD(LOG_FLOAT, rlYaw1, &relaVar[1].S[STATE_rlYaw])
-LOG_ADD(LOG_FLOAT, rlZ1, &relaVar[1].S[STATE_rlZ])
-LOG_ADD(LOG_FLOAT, dist1, &dist[1])
-LOG_ADD(LOG_FLOAT, rlX2, &relaVar[2].S[STATE_rlX])
-LOG_ADD(LOG_FLOAT, rlY2, &relaVar[2].S[STATE_rlY])
-LOG_ADD(LOG_FLOAT, rlZ2, &relaVar[2].S[STATE_rlZ])
-LOG_ADD(LOG_FLOAT, rlYaw2, &relaVar[2].S[STATE_rlYaw])
-LOG_ADD(LOG_FLOAT, dist2, &dist[2])
-LOG_ADD(LOG_FLOAT, rlX3, &relaVar[3].S[STATE_rlX])  // What happens if NumUWB = 2? 
-LOG_ADD(LOG_FLOAT, rlY3, &relaVar[3].S[STATE_rlY])
-LOG_ADD(LOG_FLOAT, rlZ3, &relaVar[3].S[STATE_rlZ])
-LOG_ADD(LOG_FLOAT, rlYaw3, &relaVar[3].S[STATE_rlYaw])
-LOG_ADD(LOG_FLOAT, dist3, &dist[3])
-LOG_ADD(LOG_FLOAT, uncert0x, &relaVar[0].P[STATE_rlX][STATE_rlX])
-LOG_ADD(LOG_FLOAT, uncert0y, &relaVar[0].P[STATE_rlY][STATE_rlY])
-LOG_ADD(LOG_FLOAT, uncert0z, &relaVar[0].P[STATE_rlZ][STATE_rlZ])
+// LOG_GROUP_START(relative_pos)
+// LOG_ADD(LOG_FLOAT, rlX0, &relaVar[0].S[STATE_rlX])
+// LOG_ADD(LOG_FLOAT, rlY0, &relaVar[0].S[STATE_rlY])
+// LOG_ADD(LOG_FLOAT, rlZ0, &relaVar[0].S[STATE_rlZ])
+// LOG_ADD(LOG_FLOAT, rlYaw0, &relaVar[0].S[STATE_rlYaw])
+// LOG_ADD(LOG_FLOAT, dist0, &dist[0])
+// LOG_ADD(LOG_FLOAT, rlX1, &relaVar[1].S[STATE_rlX])
+// LOG_ADD(LOG_FLOAT, rlY1, &relaVar[1].S[STATE_rlY])
+// LOG_ADD(LOG_FLOAT, rlYaw1, &relaVar[1].S[STATE_rlYaw])
+// LOG_ADD(LOG_FLOAT, rlZ1, &relaVar[1].S[STATE_rlZ])
+// LOG_ADD(LOG_FLOAT, dist1, &dist[1])
+// LOG_ADD(LOG_FLOAT, rlX2, &relaVar[2].S[STATE_rlX])
+// LOG_ADD(LOG_FLOAT, rlY2, &relaVar[2].S[STATE_rlY])
+// LOG_ADD(LOG_FLOAT, rlZ2, &relaVar[2].S[STATE_rlZ])
+// LOG_ADD(LOG_FLOAT, rlYaw2, &relaVar[2].S[STATE_rlYaw])
+// LOG_ADD(LOG_FLOAT, dist2, &dist[2])
+// LOG_ADD(LOG_FLOAT, rlX3, &relaVar[3].S[STATE_rlX])  // What happens if NumUWB = 2? 
+// LOG_ADD(LOG_FLOAT, rlY3, &relaVar[3].S[STATE_rlY])
+// LOG_ADD(LOG_FLOAT, rlZ3, &relaVar[3].S[STATE_rlZ])
+// LOG_ADD(LOG_FLOAT, rlYaw3, &relaVar[3].S[STATE_rlYaw])
+// LOG_ADD(LOG_FLOAT, dist3, &dist[3])
+// LOG_ADD(LOG_FLOAT, uncert0x, &relaVar[0].P[STATE_rlX][STATE_rlX])
+// LOG_ADD(LOG_FLOAT, uncert0y, &relaVar[0].P[STATE_rlY][STATE_rlY])
+// LOG_ADD(LOG_FLOAT, uncert0z, &relaVar[0].P[STATE_rlZ][STATE_rlZ])
+// LOG_GROUP_STOP(relative_pos)
 
-LOG_GROUP_STOP(relative_pos)
+LOG_GROUP_START(arswarm)
+LOG_ADD(LOG_FLOAT, xAbs, &xAbs)
+LOG_ADD(LOG_FLOAT, yAbs, &yAbs)
+LOG_ADD(LOG_FLOAT, zAbs, &zAbs)
+LOG_ADD(LOG_FLOAT, psiAbs, &psiAbs)
+LOG_GROUP_STOP(arswarm)
 
-PARAM_GROUP_START(relative_pos)
-PARAM_ADD(PARAM_FLOAT, noiFlowX, &procNoise_velX) // make sure the name is not too long
-PARAM_ADD(PARAM_FLOAT, noiFlowY, &procNoise_velY) // make sure the name is not too long
-PARAM_ADD(PARAM_FLOAT, noiFlowZ, &procNoise_velZ) // make sure the name is not too long
-PARAM_ADD(PARAM_FLOAT, noiGyroZ, &procNoise_ryaw)
-PARAM_ADD(PARAM_FLOAT, noiUWB, &measNoise_uwb)
-PARAM_ADD(PARAM_FLOAT, Ppos, &InitCovPos)
-PARAM_ADD(PARAM_FLOAT, Pyaw, &InitCovYaw)
-PARAM_ADD(PARAM_FLOAT, led_thresh, &led_thresh)
-PARAM_GROUP_STOP(relative_pos)
+
+
+// PARAM_GROUP_START(relative_pos)
+// PARAM_ADD(PARAM_FLOAT, noiFlowX, &procNoise_velX) // make sure the name is not too long
+// PARAM_ADD(PARAM_FLOAT, noiFlowY, &procNoise_velY) // make sure the name is not too long
+// PARAM_ADD(PARAM_FLOAT, noiFlowZ, &procNoise_velZ) // make sure the name is not too long
+// PARAM_ADD(PARAM_FLOAT, noiGyroZ, &procNoise_ryaw)
+// PARAM_ADD(PARAM_FLOAT, noiUWB, &measNoise_uwb)
+// PARAM_ADD(PARAM_FLOAT, Ppos, &InitCovPos)
+// PARAM_ADD(PARAM_FLOAT, Pyaw, &InitCovYaw)
+// PARAM_ADD(PARAM_FLOAT, led_thresh, &led_thresh)
+// PARAM_GROUP_STOP(relative_pos)
+
+PARAM_GROUP_START(arswarm)
+PARAM_ADD(PARAM_UINT8, in_sight, &in_sight)
+PARAM_ADD(PARAM_FLOAT, datum_x, &datum_x)
+PARAM_ADD(PARAM_FLOAT, datum_y, &datum_y)
+PARAM_ADD(PARAM_FLOAT, datum_z, &datum_z)
+PARAM_ADD(PARAM_FLOAT, datum_psi, &datum_psi)
+PARAM_ADD(PARAM_UINT8, datum_id, &datum_id)
+PARAM_GROUP_STOP(arswarm)
+
