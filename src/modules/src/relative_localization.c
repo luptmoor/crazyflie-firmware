@@ -33,8 +33,8 @@ static float procNoise_velZ = 0.15f; //0.2f;  // velocity deviation
 static float procNoise_ryaw = 0.12f; //0.12f; // yaw rate deviation
 static float measNoise_uwb = 0.15f;  //0.06;  // ranging deviation
 
-static float InitCovPos = 1000.0f;
-static float InitCovYaw = 1.0f;
+static float InitCovPos = 0.001f;
+static float InitCovYaw = 0.0001f;
 
 static float led_thresh = 0.2f;
 static float pdop = 1.0f;  // Position dilution of precision / standard decviation of distance estimate
@@ -55,6 +55,8 @@ static float xAbs = 0.0f;
 static float yAbs = 0.0f;
 static float zAbs = 0.0f;
 static float psiAbs = 0.0f;
+
+point_t kalman_pos;
 
 static positionMeasurement_t absPos;
 
@@ -120,8 +122,8 @@ void relativeLocoTask(void* arg) {
     }
 
     // Initialise relative state as zero in case the AR update fails
-    relaVar[n].S[STATE_rlX] = 0;
-    relaVar[n].S[STATE_rlY] = 0;
+    relaVar[n].S[STATE_rlX] = 0.0f;
+    relaVar[n].S[STATE_rlY] = 1.0f;
     relaVar[n].S[STATE_rlZ] = 0;
     relaVar[n].S[STATE_rlYaw] = 0;
 
@@ -144,6 +146,24 @@ void relativeLocoTask(void* arg) {
       // AR Swarm part
       if (in_sight==1) {
         continue;
+
+        // 1. Get current absolute position estimate from KF
+        estimatorKalmanGetEstimatedPos(&kalman_pos);
+        xAbs = kalman_pos.x;
+        yAbs = kalman_pos.y;
+        zAbs = kalman_pos.z;
+
+        // 2. Find relative position of datum drone in this drone's body frame
+        psiAbs = 0;
+        xAB = (xAbs - datum_x) * arm_sin_f32(psiAbs) + (yAbs - datum_y) * arm_cos_f32(psiAbs);
+        yAB = -(xAbs - datum_x) * arm_cos_f32(psiAbs) + (yAbs - datum_y) * arm_sin_f32(psiAbs);
+        zAB = zAbs - datum_z;
+
+        // 3. Initialise relatie EKF with this info
+        relaVar[n].S[STATE_rlX] = xAB;
+        relaVar[n].S[STATE_rlY] = yAB;
+        relaVar[n].S[STATE_rlZ] = zAB;
+
 
         /// TODO: Initialise relative kalman filter with estimates from AR headset
         //  relaVar[n].S[STATE_rlX] = 0;
@@ -171,7 +191,7 @@ void relativeLocoTask(void* arg) {
             inputVar[n][STATE_rlX] = vxj;
             inputVar[n][STATE_rlY] = vyj;
             inputVar[n][STATE_rlZ] = vzj;
-            inputVar[n][STATE_rlYaw] = rj;
+            inputVar[n][STATE_rlYaw] = 0.0f;
 
 
             // 2. Estimate absolute position of this drone and send to estimator
@@ -181,16 +201,24 @@ void relativeLocoTask(void* arg) {
             psiAB = relaVar[datum_id].S[STATE_rlYaw];
 
             /// TODO: Investigate if minus should be used after datum_xyz
-            psiAbs = datum_psi - psiAB;
-            xAbs = datum_x + xAB * arm_cos_f32(psiAbs) + yAB * arm_sin_f32(psiAbs);
-            yAbs = datum_y + xAB * arm_sin_f32(psiAbs) + yAB * arm_cos_f32(psiAbs);
-            zAbs = datum_z + zAB;
+            //psiAbs = datum_psi - psiAB;
+            
+
+            // Verified geometry
+            // Py:     xAbs = x_datum + xAB * arm_sin_f32(psiAbs) - yAB * arm_cos_f32(psiAbs);
+            // Py:     yAbs = y_datum + xAB * arm_cos_f32(psiAbs) + yAB * arm_sin_f32(psiAbs);
+
+            
+            psiAbs = 0.0f;
+            xAbs = datum_x - yAB;
+            yAbs = datum_y + xAB;
+            zAbs = datum_z + zAB; // works
 
             absPos.x = xAbs;
             absPos.y = yAbs;
             absPos.z = zAbs;
 
-            estimatorEnqueuePosition(&absPos);
+            estimatorEnqueuePosition(&absPos); 
           } 
 
         } else {
